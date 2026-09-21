@@ -68,3 +68,76 @@ def calculate_baseline_returns(
         result[f"baseline_return_{h}"] = returns
 
     return result
+
+def create_strict_baseline(
+    df: pd.DataFrame, events: pd.DataFrame,
+    baseline: pd.DataFrame, window: int = 5,
+) -> pd.DataFrame:
+    """
+    Remove event dates and the following `window`
+    trading observations from the baseline population.
+
+    Event:
+        t
+
+    Excluded:
+        t, t+1, ..., t+window
+    """
+    data = df.copy()
+
+    data["Date"] = pd.to_datetime(data["Date"])
+
+    data = (
+        data
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
+
+    baseline = baseline.copy()
+
+    baseline["Date"] = pd.to_datetime(
+        baseline["Date"]
+    )
+
+    # Convert event dates to a set for fast lookup
+    event_dates = set(
+        pd.to_datetime(events["Date"])
+    )
+
+    # Locate event positions in the original dataframe
+    event_positions = data.index[
+        data["Date"].isin(event_dates)
+    ].to_numpy()
+
+    excluded_positions = set()
+
+    for event_position in event_positions:
+
+        for offset in range(
+            0,
+            window + 1,
+        ):
+
+            position = event_position + offset
+
+            if position < len(data):
+                excluded_positions.add(position)
+
+    # Convert excluded dataframe positions into dates
+    excluded_dates = set(
+        data.loc[
+            sorted(excluded_positions),
+            "Date"
+        ]
+    )
+
+    strict_baseline = baseline[
+        ~baseline["Date"].isin(excluded_dates)
+    ].copy()
+
+    strict_baseline = (
+        strict_baseline
+        .reset_index(drop=True)
+    )
+
+    return strict_baseline

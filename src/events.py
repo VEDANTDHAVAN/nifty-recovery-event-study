@@ -22,6 +22,9 @@ def detect_events(
     exclude_overlapping: bool = True,
     overlap_window: int = 5,
 ) -> pd.DataFrame:
+    candidate_events = df[
+        df["event_return"] <= threshold
+    ].copy()
 
     data = calculate_daily_returns(df)
 
@@ -36,7 +39,6 @@ def detect_events(
     last_event_index = -np.inf
 
     for index in event_indices:
-
         if index > last_event_index + overlap_window:
             selected.append(index)
             last_event_index = index
