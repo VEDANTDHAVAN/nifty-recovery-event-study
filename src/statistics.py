@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
-
 
 def bootstrap_mean_ci(
     values: pd.Series | np.ndarray,
@@ -116,4 +117,117 @@ def bootstrap_mean_difference_ci(
         ),
         "ci_lower": float(lower),
         "ci_upper": float(upper),
+    }
+
+def bootstrap_mean_difference(
+    event_returns: pd.Series | np.ndarray,
+    baseline_returns: pd.Series | np.ndarray,
+    n_bootstrap: int = 10_000,
+    confidence: float = 0.95,
+    random_state: int = 42,
+) -> dict[str, float]:
+    """
+    Bootstrap the difference between event and baseline means.
+
+    Difference:
+        mean(event) - mean(baseline)
+
+    The event and baseline populations are resampled
+    independently with replacement.
+    """
+    event = np.asarray(
+        event_returns,
+        dtype=float,
+    )
+
+    baseline = np.asarray(
+        baseline_returns,
+        dtype=float,
+    )
+
+    event = event[np.isfinite(event)]
+    baseline = baseline[np.isfinite(baseline)]
+
+    if len(event) == 0:
+        raise ValueError(
+            "event_returns contains no valid observations."
+        )
+
+    if len(baseline) == 0:
+        raise ValueError(
+            "baseline_returns contains no valid observations."
+        )
+
+    rng = np.random.default_rng(
+        random_state
+    )
+
+    observed_difference = (
+        np.mean(event)
+        - np.mean(baseline)
+    )
+
+    bootstrap_differences = np.empty(
+        n_bootstrap,
+        dtype=float,
+    )
+
+    for i in range(n_bootstrap):
+
+        event_sample = rng.choice(
+            event,
+            size=len(event),
+            replace=True,
+        )
+
+        baseline_sample = rng.choice(
+            baseline,
+            size=len(baseline),
+            replace=True,
+        )
+
+        bootstrap_differences[i] = (
+            np.mean(event_sample)
+            - np.mean(baseline_sample)
+        )
+
+    alpha = 1.0 - confidence
+
+    lower = np.quantile(
+        bootstrap_differences,
+        alpha / 2,
+    )
+
+    upper = np.quantile(
+        bootstrap_differences,
+        1 - alpha / 2,
+    )
+
+    bootstrap_se = np.std(
+        bootstrap_differences,
+        ddof=1,
+    )
+
+    # Two-sided empirical bootstrap p-value.
+    # This tests whether the bootstrap distribution
+    # is concentrated around zero.
+    p_value = (
+        np.mean(
+            np.abs(bootstrap_differences)
+            >= abs(observed_difference)
+        )
+    )
+
+    return {
+        "event_n": float(len(event)),
+        "baseline_n": float(len(baseline)),
+        "observed_difference": float(
+            observed_difference
+        ),
+        "bootstrap_se": float(
+            bootstrap_se
+        ),
+        "ci_lower": float(lower),
+        "ci_upper": float(upper),
+        "p_value": float(p_value),
     }

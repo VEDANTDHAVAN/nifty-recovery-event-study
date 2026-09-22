@@ -19,114 +19,175 @@ def calculate_daily_returns(
 def detect_events(
     df: pd.DataFrame,
     threshold: float = -0.03,
-    exclude_overlapping: bool = True,
     overlap_window: int = 5,
 ) -> pd.DataFrame:
-    candidate_events = df[
-        df["event_return"] <= threshold
-    ].copy()
 
-    data = calculate_daily_returns(df)
+    data = df.copy()
 
-    event_indices = data.index[
+    # Ensure chronological ordering
+    data["Date"] = pd.to_datetime(data["Date"])
+
+    data = (
+        data
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
+
+    # Ensure numeric prices
+    for col in ["Open", "High", "Low", "Close"]:
+        data[col] = pd.to_numeric(
+            data[col],
+            errors="coerce",
+        )
+
+    # Calculate close-to-close return
+    data["event_return"] = (
+        data["Close"]
+        / data["Close"].shift(1)
+        - 1
+    )
+
+    # Candidate events
+    candidate_indices = data.index[
         data["event_return"] <= threshold
     ].tolist()
 
-    if not exclude_overlapping:
-        return data.loc[event_indices].copy()
+    # Remove overlapping events
+    selected_indices = []
 
-    selected = []
-    last_event_index = -np.inf
+    last_event_index = -(
+        overlap_window + 1
+    )
 
-    for index in event_indices:
-        if index > last_event_index + overlap_window:
-            selected.append(index)
-            last_event_index = index
+    for idx in candidate_indices:
 
-    return data.loc[selected].copy()
+        if (
+            idx - last_event_index
+            > overlap_window
+        ):
+            selected_indices.append(idx)
+            last_event_index = idx
+
+    events = data.loc[
+        selected_indices
+    ].copy()
+
+    return events.reset_index(drop=True)
 
 
 def calculate_forward_returns(
     df: pd.DataFrame,
     events: pd.DataFrame,
-    holding_periods: tuple[int, ...] = (1, 3, 5, 10),
+    holding_periods=(1, 3, 5, 10),
 ) -> pd.DataFrame:
 
+    data = df.copy()
     result = events.copy()
 
-    # Explicitly guarantee numeric OHLC columns
-    open_prices = pd.to_numeric(
-        df["Open"],
-        errors="coerce",
-    ).to_numpy(dtype=float)
+    # -----------------------------
+    # Normalize dataframe
+    # -----------------------------
 
-    close_prices = pd.to_numeric(
-        df["Close"],
-        errors="coerce",
-    ).to_numpy(dtype=float)
+    data["Date"] = pd.to_datetime(data["Date"])
 
-    dates = df["Date"].to_numpy()
+    data = (
+        data
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
 
-    event_positions = result.index.to_numpy(dtype=int)
-
-    # All trades enter at the next trading day's Open
-    entry_positions = event_positions + 1
-
-    valid_entry = entry_positions < len(df)
-
-    result["entry_date"] = pd.NaT
-    result["entry_price"] = np.nan
-
-    valid_events = event_positions[valid_entry]
-    valid_entry_positions = entry_positions[valid_entry]
-
-    result.loc[
-        valid_events,
-        "entry_date"
-    ] = dates[valid_entry_positions]
-
-    result.loc[
-        valid_events,
-        "entry_price"
-    ] = open_prices[valid_entry_positions]
-
-    # Calculate each holding period
-    for h in holding_periods:
-
-        exit_positions = event_positions + h
-
-        valid = (
-            (entry_positions < len(df)) &
-            (exit_positions < len(df))
+    for col in ["Open", "High", "Low", "Close"]:
+        data[col] = pd.to_numeric(
+            data[col],
+            errors="coerce",
         )
 
-        valid_events = event_positions[valid]
-        valid_entry_positions = entry_positions[valid]
-        valid_exit_positions = exit_positions[valid]
+    # Explicit NumPy arrays.
+    # This removes the pandas Scalar typing issue.
+    dates = data["Date"].to_numpy()
 
-        result[f"exit_date_{h}"] = pd.NaT
-        result[f"exit_price_{h}"] = np.nan
+    opens = data["Open"].to_numpy(
+        dtype=float
+    )
+
+    closes = data["Close"].to_numpy(
+        dtype=float
+    )
+
+    # Map each date to its row position.
+    position_map = {
+        date: idx
+        for idx, date in enumerate(dates)
+    }
+
+    result = (
+        result
+        .sort_values("Date")
+        .reset_index(drop=True)
+    )
+
+    # Make sure event dates have the same type
+    result["Date"] = pd.to_datetime(
+        result["Date"]
+    )
+
+    event_indices = result["Date"].map(
+        position_map
+    )
+
+    # -----------------------------
+    # Forward returns
+    # -----------------------------
+
+    for h in holding_periods:
+
+        result[f"entry_date_{h}"] = pd.NaT
+
+        result[f"entry_price_{h}"] = np.nan
+
         result[f"forward_return_{h}"] = np.nan
 
-        result.loc[
-            valid_events,
-            f"exit_date_{h}"
-        ] = dates[valid_exit_positions]
+        for i, event_idx in enumerate(
+            event_indices
+        ):
+            # Event date not found
+            if pd.isna(event_idx):
+                continue
 
-        result.loc[
-            valid_events,
-            f"exit_price_{h}"
-        ] = close_prices[valid_exit_positions]
+            event_idx_int = int(event_idx)
 
-        forward_returns = (
-            close_prices[valid_exit_positions]
-            / open_prices[valid_entry_positions]
-        ) - 1.0
+            entry_idx = event_idx_int + 1
+            exit_idx = event_idx_int + h
 
-        result.loc[
-            valid_events,
-            f"forward_return_{h}"
-        ] = forward_returns
+            # Not enough future data
+            if (
+                entry_idx >= len(data)
+                or exit_idx >= len(data)
+            ):
+                continue
+
+            entry_price = opens[entry_idx]
+            exit_price = closes[exit_idx]
+
+            # Invalid/missing price
+            if (
+                not np.isfinite(entry_price)
+                or not np.isfinite(exit_price)
+                or entry_price == 0
+            ):
+                continue
+
+            result.loc[
+                i, f"entry_date_{h}",
+            ] = dates[entry_idx]
+
+            result.loc[
+                i, f"entry_price_{h}",
+            ] = entry_price
+
+            result.loc[
+                i, f"forward_return_{h}",
+            ] = (exit_price / entry_price) - 1
 
     return result
 
@@ -137,16 +198,113 @@ def run_event_study(
     exclude_overlapping: bool = True,
     overlap_window: int = 5,
 ) -> pd.DataFrame:
+    df = df.copy()
 
-    events = detect_events(
-        df=df,
-        threshold=threshold,
-        exclude_overlapping=exclude_overlapping,
-        overlap_window=overlap_window,
+    # Ensure chronological order
+    df["Date"] = pd.to_datetime(df["Date"])
+
+    df = (
+        df.sort_values("Date")
+        .reset_index(drop=True)
     )
 
-    return calculate_forward_returns(
-        df=df,
-        events=events,
-        holding_periods=holding_periods,
+    # Ensure price columns are numeric
+    for col in ["Open", "High", "Low", "Close"]:
+        df[col] = pd.to_numeric(
+            df[col], errors="coerce",
+        )
+
+    # Calculate close-to-close daily return
+    df["event_return"] = (
+        df["Close"] / df["Close"].shift(1) - 1
     )
+
+    # Detect candidate events
+    candidate_indices = df.index[
+        df["event_return"] <= threshold
+    ].tolist()
+
+    # Remove overlapping events
+    if exclude_overlapping:
+        selected_indices = []
+
+        last_event_index = -(
+            overlap_window + 1
+        )
+
+        for idx in candidate_indices:
+            if (
+                idx - last_event_index
+                > overlap_window
+            ):
+                selected_indices.append(idx)
+                last_event_index = idx
+
+    else:
+        selected_indices = candidate_indices
+
+    events = df.loc[
+        selected_indices
+    ].copy()
+
+    # Calculate forward returns
+    for h in holding_periods:
+        entry_position = events.index + 1
+        exit_position = events.index + h
+
+        valid = (
+            entry_position < len(df)
+        ) & (
+            exit_position < len(df)
+        )
+
+        events[
+            f"entry_date_{h}"
+        ] = pd.NaT
+
+        events[
+            f"entry_price_{h}"
+        ] = np.nan
+
+        events[
+            f"forward_return_{h}"
+        ] = np.nan
+
+        valid_events = events.index[valid]
+
+        valid_entry = entry_position[valid]
+        valid_exit = exit_position[valid]
+
+        events.loc[
+            valid_events,
+            f"entry_date_{h}"
+        ] = df.loc[
+            valid_entry,
+            "Date"
+        ].to_numpy()
+
+        events.loc[
+            valid_events,
+            f"entry_price_{h}"
+        ] = df.loc[
+            valid_entry,
+            "Open"
+        ].to_numpy()
+
+        events.loc[
+            valid_events,
+            f"forward_return_{h}"
+        ] = (
+            df.loc[
+                valid_exit,
+                "Close"
+            ].to_numpy(dtype=float)
+            /
+            df.loc[
+                valid_entry,
+                "Open"
+            ].to_numpy(dtype=float)
+            - 1
+        )
+
+    return events.reset_index(drop=True)
