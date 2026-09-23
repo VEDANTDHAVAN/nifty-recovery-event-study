@@ -42,6 +42,61 @@ At the primary threshold, raw qualifying days number 79; overlap filtering leave
 
 The full-sample comparison uses all 4,585 observations. The event population has 53 observations and the non-event population has 4,532. Full-sample return buckets are reported in `results/return_bucket_results.csv`.
 
+### How I understand the hypothesis
+
+The hypothesis is not that every market decline should be followed by a profitable rebound. It is narrower: after an unusually large negative daily return, is the average subsequent return different from what would normally be observed on eligible trading days?
+
+The comparison therefore has three layers:
+
+1. The full sample describes how current return magnitude relates to later returns across all eligible observations.
+2. The event study isolates the predefined extreme population, `event_return <= -3%`, and compares it with the same forward-return baseline.
+3. The OOS sample asks whether any apparent development-period difference survives in unseen data.
+
+A positive event mean alone is not sufficient evidence. Support for the hypothesis would require a meaningful event-minus-baseline difference with uncertainty intervals that do not include zero and preferably consistent OOS behavior. This design intentionally avoids turning an interesting average into a causal or trading claim.
+
+### Core numerical results
+
+| Period | Horizon | Event n | Event mean | Baseline mean | Difference |
+|---|---:|---:|---:|---:|---:|
+| Development | 1 day | 38 | -0.2715% | -0.0484% | -0.2231% |
+| Development | 3 days | 38 | 0.1889% | 0.0370% | 0.1519% |
+| Development | 5 days | 38 | 0.8975% | 0.1171% | 0.7805% |
+| Development | 10 days | 38 | 0.4538% | 0.3103% | 0.1435% |
+| OOS | 1 day | 15 | 0.5853% | -0.0529% | 0.6382% |
+| OOS | 3 days | 15 | 0.1316% | 0.0425% | 0.0891% |
+| OOS | 5 days | 15 | 0.3491% | 0.1432% | 0.2059% |
+| OOS | 10 days | 15 | 0.0207% | 0.3890% | -0.3683% |
+
+All bootstrap 95% confidence intervals for the event-minus-baseline differences cross zero. The OOS sample is small and estimates are imprecise. The evidence therefore does not establish a statistically robust positive abnormal-return effect.
+
+### Generated figures
+
+Event and baseline mean forward returns in development:
+
+![Event versus baseline mean forward return](results/figures/event_vs_baseline.png)
+
+The same comparison in the held-out OOS period:
+
+![OOS event versus baseline mean forward return](results/figures/oos_event_vs_baseline.png)
+
+Bootstrap uncertainty around the event-minus-baseline differences:
+
+![Bootstrap confidence intervals](results/figures/bootstrap_confidence_intervals.png)
+
+The confidence intervals visibly include the zero reference line at every tested horizon and period.
+
+Sensitivity of the event count to the already-tested thresholds:
+
+![Threshold sensitivity](results/figures/threshold_sensitivity.png)
+
+This is a diagnostic of sample size, not a request to select a more favorable threshold.
+
+Inferentially populated regime-conditioned differences at the five-day horizon:
+
+![Regime-conditioned mean differences](results/figures/regime_mean_differences.png)
+
+Regime cells below 10 events remain in the data for transparency but are marked `descriptive_only` and are not interpreted as reliable evidence.
+
 Event-study mean differences are positive at some horizons in both development and OOS, especially around five days, but all bootstrap 95% confidence intervals cross zero. The 10-day OOS difference is negative. The held-out evidence therefore does not robustly confirm a positive abnormal-return effect.
 
 The conclusion is deliberately limited:
