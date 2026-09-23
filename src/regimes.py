@@ -130,3 +130,19 @@ def add_volatility_regime(
     )
 
     return data
+
+
+def add_trend_regime(df: pd.DataFrame, window: int = 20) -> pd.DataFrame:
+    data = df.copy().sort_values("Date").reset_index(drop=True)
+    data["Date"] = pd.to_datetime(data["Date"])
+    data["Close"] = pd.to_numeric(data["Close"], errors="coerce")
+    data["ma_20"] = data["Close"].rolling(20, min_periods=20).mean()
+    data["ma_50"] = data["Close"].rolling(50, min_periods=50).mean()
+    data["trend_ma"] = data["Close"].rolling(window, min_periods=window).mean()
+    data["trend_regime"] = pd.Series(pd.NA, index=data.index, dtype="string")
+    valid = data["trend_ma"].notna()
+    data.loc[valid & (data["Close"] >= data["trend_ma"]), "trend_regime"] = "uptrend"
+    data.loc[valid & (data["Close"] < data["trend_ma"]), "trend_regime"] = "downtrend"
+    data["trend_volatility_regime"] = data["trend_regime"].astype("string") + "_" + data["volatility_regime"].astype("string")
+    data.loc[data[["trend_regime", "volatility_regime"]].isna().any(axis=1), "trend_volatility_regime"] = pd.NA
+    return data

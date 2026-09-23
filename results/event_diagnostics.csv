@@ -1,0 +1,7 @@
+threshold,raw_qualifying,overlap_filtered,development_events,oos_events
+-0.02,199,123,92,31
+-0.025,117,75,54,21
+-0.03,79,53,38,15
+-0.035,50,35,26,9
+-0.04,37,26,20,6
+-0.05,22,15,11,4
