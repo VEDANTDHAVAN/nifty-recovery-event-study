@@ -12,6 +12,8 @@ The research workflow is deliberately narrow:
 
 The data contain 4,585 daily OHLC observations from `data/raw/nifty50.csv`. The fixed development/OOS split is 2020-01-01.
 
+Dataset source: [NIFTY 50 Dataset 2000–2026](https://www.kaggle.com/datasets/vinaymandal/nifty50-dataset-2000-2026)
+
 The primary event is a close-to-close return of at most -3%:
 
 ```text
@@ -118,7 +120,7 @@ The pipeline writes canonical datasets, tables, figures, and diagnostics under `
 Run the compact notebook from a clean kernel:
 
 ```powershell
-& .\.venv\Scripts\jupyter-nbconvert.exe --to notebook --execute notebooks/01_data_and_event_study.ipynb --output-dir $env:TEMP
+& .\.venv\Scripts\jupyter-nbconvert.exe --to notebook --execute notebooks/data_and_event_study.ipynb --output-dir $env:TEMP
 ```
 
 The notebook presents dataset validation, full-sample forward returns, return buckets, event results, threshold diagnostics, bootstrap results, regime robustness, and the final assessment.
