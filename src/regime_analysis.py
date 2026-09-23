@@ -113,3 +113,106 @@ def calculate_regime_analysis(
                 })
 
     return pd.DataFrame(results)
+
+def calculate_regime_bootstrap(
+    events: pd.DataFrame, baseline: pd.DataFrame,
+    horizons: tuple[int, ...] = (1, 3, 5, 10),
+    regimes: tuple[str, ...] = (
+        "low", "medium", "high",
+    ), min_events: int = 5, n_bootstrap: int = 10_000,
+    block_length: int = 5, random_state: int = 42,
+) -> pd.DataFrame:
+    from src.statistics import (
+        block_bootstrap_mean_difference,
+    )
+
+    results = []
+
+    valid_events = events[
+        events["volatility_regime"].notna()
+    ].copy()
+
+    valid_baseline = baseline[
+        baseline["volatility_regime"].notna()
+    ].copy()
+
+    for period in ["development", "oos"]:
+        period_events = valid_events[
+            valid_events["period"] == period
+        ]
+
+        period_baseline = valid_baseline[
+            valid_baseline["period"] == period
+        ]
+
+        for regime in regimes:
+            regime_events = period_events[
+                period_events[
+                    "volatility_regime"
+                ] == regime
+            ]
+
+            regime_baseline = period_baseline[
+                period_baseline[
+                    "volatility_regime"
+                ] == regime
+            ]
+
+            for h in horizons:
+                event_returns = pd.to_numeric(
+                    regime_events[
+                        f"forward_return_{h}"
+                    ],
+                    errors="coerce",
+                ).dropna()
+
+                baseline_returns = pd.to_numeric(
+                    regime_baseline[
+                        f"baseline_return_{h}"
+                    ],
+                    errors="coerce",
+                ).dropna()
+
+                event_n = len(event_returns)
+
+                if event_n < min_events:
+                    results.append({
+                        "period": period,
+                        "regime": regime,
+                        "horizon": h,
+                        "event_n": event_n,
+                        "baseline_n":
+                            len(baseline_returns),
+                        "sufficient_events": False,
+                        "observed_difference": np.nan,
+                        "bootstrap_se": np.nan,
+                        "ci_lower": np.nan,
+                        "ci_upper": np.nan,
+                    })
+
+                    continue
+
+                result = (
+                    block_bootstrap_mean_difference(
+                        event_returns=event_returns,
+                        baseline_returns=baseline_returns,
+                        n_bootstrap=n_bootstrap,
+                        block_length=block_length,
+                        random_state=random_state,
+                    )
+                )
+
+                results.append({
+                    "period": period,
+                    "regime": regime,
+                    "horizon": h,
+                    "event_n": int(event_n),
+                    "baseline_n": int(len(baseline_returns)),
+                    "sufficient_events": True,
+                    "observed_difference": result["observed_difference"],
+                    "bootstrap_se": result["bootstrap_se"],
+                    "ci_lower": result["ci_lower"],
+                    "ci_upper": result["ci_upper"],
+                })
+
+    return pd.DataFrame(results)
